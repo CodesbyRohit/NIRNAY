@@ -51,6 +51,7 @@ class EvidenceSource(BaseModel):
     url: AnyHttpUrl
     snippet: str | None = Field(default=None, max_length=5_000)
     published_date: str | None = Field(default=None, max_length=100)
+    raw_content: str | None = Field(default=None, exclude=True, repr=False)
 
 
 class SourceTier(str, Enum):
