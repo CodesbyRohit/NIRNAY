@@ -660,8 +660,8 @@ textarea:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 4px;
+  gap: 10px;
+  margin-bottom: 6px;
 }
 
 .source-tier,
@@ -669,8 +669,10 @@ textarea:focus-visible {
 .citation-tag {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   border-radius: 6px;
   padding: 5px 8px;
+  margin-right: 0;
   font-size: 9px;
   font-weight: 730;
   line-height: 1.3;
