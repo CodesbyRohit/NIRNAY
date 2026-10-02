@@ -36,7 +36,7 @@ class TavilyEvidenceSearch:
                         "max_results": 3,
                         "search_depth": "basic",
                         "include_answer": False,
-                        "include_raw_content": False,
+                        "include_raw_content": True,
                     },
                 )
                 response.raise_for_status()
@@ -62,6 +62,11 @@ class TavilyEvidenceSearch:
                         url=cast(AnyHttpUrl, url),
                         snippet=result.get("content") or None,
                         published_date=result.get("published_date"),
+                        raw_content=(
+                            result["raw_content"]
+                            if isinstance(result.get("raw_content"), str)
+                            else None
+                        ),
                     )
                 )
             return sources

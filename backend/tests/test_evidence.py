@@ -199,6 +199,9 @@ def test_search_provider_sends_only_claim_query_and_no_answer_generation() -> No
                         "url": SOURCE["url"],
                         "content": SOURCE["snippet"],
                         "published_date": SOURCE["published_date"],
+                        "raw_content": (
+                            "The actual source page discusses related details."
+                        ),
                     }
                 ]
             },
@@ -215,8 +218,136 @@ def test_search_provider_sends_only_claim_query_and_no_answer_generation() -> No
     assert request_body["query"] == "A claim to find sources for"
     assert request_body["max_results"] == 3
     assert request_body["include_answer"] is False
-    assert request_body["include_raw_content"] is False
+    assert request_body["include_raw_content"] is True
     assert request_body["api_key"] == "test-key"
+    assert results[0].raw_content == "The actual source page discusses related details."
+
+
+def test_extracts_relevant_excerpt_from_actual_source_page() -> None:
+    source = EvidenceSource(
+        title="Investor information",
+        url="https://www.sebi.gov.in/investor",
+        snippet="Search snippet that is not the page excerpt.",
+        raw_content=(
+            "Home | About | Contact\n"
+            "SEBI provides investor education resources for investors. "
+            "These materials explain risks before financial decisions.\n"
+            "Unrelated contact information follows."
+        ),
+    )
+
+    ranked = rank_sources(
+        [source],
+        "SEBI provides investor education resources.",
+        EvidenceOrigin.LIVE_SEARCH,
+    )
+
+    assert len(ranked) == 1
+    assert ranked[0].evidence.status == EvidenceStatus.RELEVANT
+    assert ranked[0].evidence.excerpt_source == "source_page_excerpt"
+    assert ranked[0].evidence.excerpt == (
+        "SEBI provides investor education resources for investors."
+    )
+    assert "Search snippet" not in (ranked[0].evidence.excerpt or "")
+
+
+def test_unrelated_raw_page_does_not_produce_random_page_excerpt() -> None:
+    source = EvidenceSource(
+        title="Mumbai weather",
+        url="https://weather.example/mumbai",
+        snippet=None,
+        raw_content="Today's weather forecast covers rainfall in Mumbai.",
+    )
+
+    ranked = rank_sources(
+        [source],
+        "SEBI provides investor education resources.",
+        EvidenceOrigin.LIVE_SEARCH,
+    )
+
+    assert ranked[0].evidence.status == EvidenceStatus.NO_RELEVANT
+    assert ranked[0].evidence.excerpt is None
+    assert ranked[0].evidence.excerpt_source is None
+
+
+def test_weak_raw_page_match_is_labeled_as_weak_page_evidence() -> None:
+    source = EvidenceSource(
+        title="Investor information",
+        url="https://www.sebi.gov.in/investor",
+        snippet="A search snippet with extra claim terms.",
+        raw_content="SEBI maintains several public information pages.",
+    )
+
+    ranked = rank_sources(
+        [source],
+        "SEBI provides investor education resources.",
+        EvidenceOrigin.LIVE_SEARCH,
+    )
+
+    assert ranked[0].evidence.status == EvidenceStatus.WEAK_PARTIAL
+    assert ranked[0].evidence.excerpt_source == "source_page_excerpt"
+    assert ranked[0].evidence.excerpt == "SEBI maintains several public information pages."
+
+
+def test_raw_page_content_is_excluded_from_model_serialization_and_repr() -> None:
+    private_page_text = "SECRET PAGE CONTENT must remain provider-only."
+    source = EvidenceSource(
+        title="Source",
+        url="https://example.org/page",
+        snippet="Snippet",
+        raw_content=private_page_text,
+    )
+
+    assert "raw_content" not in source.model_dump()
+    assert private_page_text not in repr(source)
+    ranked = rank_sources(
+        [source],
+        "An unrelated claim about an investment.",
+        EvidenceOrigin.LIVE_SEARCH,
+    )
+    assert "raw_content" not in ranked[0].model_dump()
+    assert private_page_text not in str(ranked[0].model_dump())
+
+
+def test_fixture_origin_never_promotes_raw_content_to_page_excerpt() -> None:
+    source = EvidenceSource(
+        title="Illustrative source",
+        url="https://www.sebi.gov.in/investor",
+        snippet="Illustrative fixture text.",
+        raw_content="SEBI provides investor education resources for investors.",
+    )
+
+    ranked = rank_sources(
+        [source],
+        "SEBI provides investor education resources.",
+        EvidenceOrigin.DEMO_FIXTURE,
+    )
+
+    assert ranked[0].origin == EvidenceOrigin.DEMO_FIXTURE
+    assert ranked[0].evidence.excerpt_source == "demo_fixture"
+    assert ranked[0].evidence.excerpt != source.raw_content
+
+
+def test_deduplication_preserves_raw_page_content() -> None:
+    sources = [
+        EvidenceSource(
+            title="Page",
+            url="https://news.example/page",
+            snippet="A search snippet.",
+        ),
+        EvidenceSource(
+            title="Page",
+            url="https://news.example/page/",
+            snippet="The longer provider snippet with more background.",
+            raw_content="The actual claim details appear on this source page.",
+        ),
+    ]
+
+    ranked = rank_sources(sources, "actual claim details source page")
+
+    assert len(ranked) == 1
+    assert ranked[0].evidence.excerpt_source == "source_page_excerpt"
+    assert ranked[0].evidence.status == EvidenceStatus.RELEVANT
 
 
 @pytest.mark.parametrize(
@@ -359,6 +490,22 @@ def test_live_search_api_marks_search_snippet_as_live_not_page_evidence(
     assert source["origin"] == "live_search"
     assert source["evidence"]["excerpt_source"] == "search_provider_snippet"
     assert source["evidence"]["excerpt"] == SOURCE["snippet"]
+
+
+def test_raw_page_content_is_not_serialized_in_evidence_api(
+    client_and_search: Callable[[FakeSearchProvider], TestClient],
+) -> None:
+    private_text = "PRIVATE RAW PAGE CONTENT."
+    provider = FakeSearchProvider([{**SOURCE, "raw_content": private_text}])
+
+    response = client_and_search(provider).post(
+        "/api/v1/evidence",
+        json={"claims": CLAIMS[:1], "consent": True},
+    )
+
+    assert response.status_code == 200
+    assert private_text not in response.text
+    assert "raw_content" not in response.text
 
 
 def test_source_tier_does_not_use_title_or_snippet() -> None:

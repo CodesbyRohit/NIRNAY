@@ -359,21 +359,66 @@ def test_assessment_provider_receives_only_claim_and_evidence_package() -> None:
     }
 
 
-def test_snippet_cannot_be_promoted_to_supported() -> None:
+@pytest.mark.parametrize(
+    "provider_state",
+    [AssessmentState.SUPPORTED, AssessmentState.CONTRADICTED],
+)
+def test_non_page_evidence_cannot_be_promoted_to_supported_or_contradicted(
+    provider_state: AssessmentState,
+) -> None:
     claim = make_claim()
     source = make_evidence(excerpt_source="search_provider_snippet")
     result, _ = run_assessment(
         claim,
         [source],
         ClaimAssessment(
-            assessment=AssessmentState.SUPPORTED,
-            rationale="The snippet appears to support the claim.",
+            assessment=provider_state,
+            rationale="The supplied search snippet is not direct page evidence.",
             evidence_ids=[source.evidence_id],
             uncertainty="Page not fetched.",
         ),
     )
 
     assert result.assessment == AssessmentState.NEEDS_MORE_EVIDENCE
+
+
+def test_assessment_receives_only_extracted_page_excerpt_not_raw_content() -> None:
+    from app.services.source_ranking import rank_sources
+
+    claim = make_claim("SEBI provides investor education resources.")
+    raw_content = (
+        "Irrelevant navigation and unrelated market headlines. "
+        "SEBI provides investor education resources for investors."
+    )
+    provider_source = EvidenceSource(
+        title="Investor resources",
+        url="https://www.sebi.gov.in/investors",
+        snippet="Provider search snippet.",
+        raw_content=raw_content,
+    )
+    evidence_package = rank_sources(
+        [provider_source],
+        claim.text,
+        EvidenceOrigin.LIVE_SEARCH,
+    )
+    provider = FakeAssessmentProvider(
+        ClaimAssessment(
+            assessment=AssessmentState.SUPPORTED,
+            rationale="The page excerpt states that SEBI provides the resources.",
+            evidence_ids=[evidence_package[0].evidence_id],
+            uncertainty="This assessment is limited to the excerpt.",
+        )
+    )
+
+    result = asyncio.run(AssessmentService(provider).assess(claim, evidence_package))
+
+    assert result.assessment == AssessmentState.SUPPORTED
+    assert provider.package[0].evidence.excerpt_source == "source_page_excerpt"
+    assert provider.package[0].evidence.excerpt == (
+        "SEBI provides investor education resources for investors."
+    )
+    assert not hasattr(provider.package[0], "raw_content")
+    assert raw_content not in str(provider.package[0].model_dump())
 
 
 def test_demo_fixture_runs_through_assessment_using_fixture_evidence() -> None:
