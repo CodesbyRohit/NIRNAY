@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.analysis import router as analysis_router
 from app.api.routes.evidence import router as evidence_router
 from app.api.routes.health import router as health_router
+from app.middleware.request_size import ScreenshotRequestSizeLimitMiddleware
 
 
 def _get_cors_origins() -> list[str]:
@@ -21,6 +22,9 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
+)
+app.add_middleware(
+    ScreenshotRequestSizeLimitMiddleware,
 )
 app.add_middleware(
     CORSMiddleware,

@@ -62,6 +62,12 @@ Open `http://localhost:3000`, paste financial content, select the external-proce
 
 For example, the demo text “SEBI approved XYZ investment plan. Guaranteed 30% return. Only 200 slots remaining. Join NOW!” should yield separate claims for the approval assertion, the guaranteed return, and the remaining-slot assertion. The exact phrasing can vary; the claims must remain distinct.
 
+### Screenshot OCR
+
+The home page also accepts PNG, JPEG, or WebP screenshots up to 10 MiB. `POST /api/v1/analyze/screenshot` requires multipart fields `file` and explicit `consent=true`; it validates image type, signature, size, and dimensions, then invokes the configured OCR adapter. The endpoint returns redacted OCR text, image media type and byte size, plus the existing complete-analysis response. OCR text is limited to 20,000 characters and passes through the existing normalization, PII redaction, claim extraction, evidence, assessment, and manipulation-signal pipeline. The existing text endpoints are unchanged.
+
+No OCR vendor is selected or configured by default. To enable screenshot analysis, configure the backend-only `OCR_API_URL` to an HTTP(S) endpoint accepting a multipart field named `file` and returning JSON with a string `text` property; optionally set backend-only `OCR_API_KEY` for a Bearer token. Without `OCR_API_URL`, screenshot analysis safely returns HTTP 503. Do not put OCR credentials in frontend variables. For a local, explicitly enabled canonical hackathon demo only, set backend-only `NIRNAY_OCR_DEMO_MODE=true`; the screenshot route then returns fixed OCR text for the canonical suspicious-message example instead of contacting OCR. This flag defaults off, must not be enabled in production, and is never exposed to or controlled by the frontend. Evidence/analysis providers still follow their normal backend configuration and guardrails. Images are sent to the selected OCR provider only after consent; NIRNAY does not save uploaded images. A route-scoped ASGI limit rejects screenshot requests above 10 MiB plus 64 KiB multipart overhead before multipart parsing, while the image itself remains capped at 10 MiB and 20 megapixels. Identifiers cannot be redacted from image pixels before OCR, so avoid uploading screenshots that contain sensitive information. The extracted text is locally redacted before it enters the existing analysis pipeline or is returned to the browser.
+
 ## Tests and production build
 
 Run backend tests from `backend/`:
