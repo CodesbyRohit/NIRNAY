@@ -13,11 +13,18 @@ from app.providers.errors import ProviderError
 from app.providers.fixture_evidence import DemoFixtureEvidenceProvider
 from app.providers.tavily_search import TavilyEvidenceSearch
 from app.schemas.analysis import (
+    AssessmentState,
+    Claim,
+    ClaimAssessment,
+    ClaimKind,
+    EvidenceRequest,
     EvidenceOrigin,
+    RankedEvidenceSource,
     EvidenceSource,
     EvidenceStatus,
     SourceTier,
 )
+from app.services.assessment import AssessmentService
 from app.services.evidence import EvidenceService
 from app.services.source_ranking import classify_domain, rank_sources
 
@@ -348,6 +355,104 @@ def test_deduplication_preserves_raw_page_content() -> None:
     assert len(ranked) == 1
     assert ranked[0].evidence.excerpt_source == "source_page_excerpt"
     assert ranked[0].evidence.status == EvidenceStatus.RELEVANT
+
+
+def test_tavily_raw_and_snippet_paths_remain_guarded_end_to_end() -> None:
+    claim = Claim(
+        id=UUID("f6c8dfac-6e72-4ceb-a8c7-cf42f52ea8f0"),
+        text="SEBI provides investor education resources.",
+        kind=ClaimKind.FACTUAL,
+    )
+    page_passage = "SEBI does not provide investor education resources."
+    full_page = (
+        "Navigation and unrelated page content. "
+        f"{page_passage} Contact: private-page-detail."
+    )
+
+    for raw_content, expected_excerpt_source, expected_assessment in (
+        (
+            full_page,
+            "source_page_excerpt",
+            AssessmentState.CONTRADICTED,
+        ),
+        (
+            None,
+            "search_provider_snippet",
+            AssessmentState.NEEDS_MORE_EVIDENCE,
+        ),
+    ):
+        requests: list[httpx.Request] = []
+
+        def handle(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "title": "Independent report",
+                            "url": "https://www.sebi.gov.in/investor-resources",
+                            "content": page_passage,
+                            "raw_content": raw_content,
+                        }
+                    ]
+                },
+            )
+
+        tavily = TavilyEvidenceSearch(
+            api_key="test-key",
+            transport=httpx.MockTransport(handle),
+        )
+        evidence_response = asyncio.run(
+            EvidenceService(tavily).retrieve(
+                EvidenceRequest(claims=[claim], consent=True)
+            )
+        )
+        source = evidence_response.results[0].sources[0]
+        serialized_response = evidence_response.model_dump_json()
+
+        assert json.loads(requests[0].content)["include_raw_content"] is True
+        assert source.origin == EvidenceOrigin.LIVE_SEARCH
+        assert source.domain == "www.sebi.gov.in"
+        assert source.source_tier == SourceTier.TIER_1
+        assert source.evidence.excerpt_source == expected_excerpt_source
+        assert source.evidence.excerpt
+        assert source.evidence.status in {
+            EvidenceStatus.RELEVANT,
+            EvidenceStatus.WEAK_PARTIAL,
+        }
+        assert source.evidence.excerpt == page_passage
+        assert raw_content is None or raw_content not in serialized_response
+        assert "raw_content" not in serialized_response
+        UUID(str(source.evidence_id))
+
+        class AssessmentProbe:
+            package: list[RankedEvidenceSource] = []
+
+            async def assess(
+                self,
+                assessment_claim: Claim,
+                evidence_package: list[RankedEvidenceSource],
+            ) -> ClaimAssessment:
+                self.package = evidence_package
+                return ClaimAssessment(
+                    assessment=AssessmentState.CONTRADICTED,
+                    rationale="The supplied evidence was considered.",
+                    evidence_ids=[evidence_package[0].evidence_id],
+                    uncertainty="Limited to the supplied evidence package.",
+                )
+
+        assessor = AssessmentProbe()
+        assessed = asyncio.run(
+            AssessmentService(assessor).assess(claim, evidence_response.results[0].sources)
+        )
+
+        assert assessed.assessment == expected_assessment
+        assert assessor.package == evidence_response.results[0].sources
+        assert not hasattr(assessor.package[0], "raw_content")
+        assert raw_content is None or raw_content not in str(
+            assessor.package[0].model_dump()
+        )
 
 
 @pytest.mark.parametrize(

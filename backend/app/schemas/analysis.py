@@ -164,3 +164,13 @@ class CompleteAnalysisResponse(BaseModel):
     status: Literal["completed"]
     manipulation_signals: list[ManipulationSignal]
     results: list[AssessedClaimResult]
+
+
+class ScreenshotAnalysisResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input_type: Literal["screenshot"]
+    ocr_text: str = Field(min_length=1, max_length=20_000)
+    content_type: Literal["image/jpeg", "image/png", "image/webp"]
+    size_bytes: int = Field(ge=1, le=10 * 1024 * 1024)
+    analysis: CompleteAnalysisResponse

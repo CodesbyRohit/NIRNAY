@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { analyzeContent, checkBackendHealth } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { analyzeContent, analyzeScreenshot, checkBackendHealth } from "@/lib/api";
 import type {
   AssessmentState,
   CompleteAnalysisResponse,
@@ -13,6 +13,7 @@ type HealthState = "checking" | "online" | "offline";
 
 const DEMO_CONTENT =
   "SEBI approved XYZ investment plan. Guaranteed 30% return. Only 200 slots remaining. Join NOW!";
+const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
 
 const SIGNAL_LABELS: Record<ManipulationSignal["signal_type"], string> = {
   GUARANTEED_RETURN: "Guaranteed-return language",
@@ -160,9 +161,11 @@ function friendlyError(error: unknown): string {
 function AnalysisResults({
   analysis,
   analyzedContent,
+  contentLabel,
 }: {
   analysis: CompleteAnalysisResponse;
   analyzedContent: string;
+  contentLabel: string;
 }) {
   const claimCount = analysis.results.length;
   const evidenceCount = analysis.results.reduce(
@@ -183,7 +186,7 @@ function AnalysisResults({
 
       <section aria-label="Analysis summary" className="summary-card">
         <div className="summary-copy">
-          <h3>Analyzed content</h3>
+          <h3>{contentLabel}</h3>
           <p className="content-summary">{analyzedContent}</p>
         </div>
         <dl className="summary-counts">
@@ -326,12 +329,16 @@ function AnalysisResults({
 export default function Home() {
   const [health, setHealth] = useState<HealthState>("checking");
   const [content, setContent] = useState("");
+  const [inputMode, setInputMode] = useState<"text" | "screenshot">("text");
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [consent, setConsent] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<CompleteAnalysisResponse | null>(null);
   const [analyzedContent, setAnalyzedContent] = useState("");
+  const [analyzedContentLabel, setAnalyzedContentLabel] = useState("Analyzed content");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -351,8 +358,20 @@ export default function Home() {
     event.preventDefault();
     setAnalysisError(null);
 
-    if (!content.trim()) {
+    if (inputMode === "text" && !content.trim()) {
       setFormError("Paste financial content before starting an analysis.");
+      return;
+    }
+    if (inputMode === "screenshot" && !screenshotFile) {
+      setFormError("Choose a screenshot before starting an analysis.");
+      return;
+    }
+    if (
+      inputMode === "screenshot" &&
+      screenshotFile &&
+      screenshotFile.size > MAX_SCREENSHOT_BYTES
+    ) {
+      setFormError("This image exceeds the 10 MiB upload limit.");
       return;
     }
     if (!consent) {
@@ -366,9 +385,19 @@ export default function Home() {
     setAnalyzedContent("");
 
     try {
-      const result = await analyzeContent({ content, consent });
-      setAnalysis(result);
-      setAnalyzedContent(content.trim());
+      if (inputMode === "screenshot" && screenshotFile) {
+        const result = await analyzeScreenshot(screenshotFile, consent);
+        setAnalysis(result.analysis);
+        setAnalyzedContent(result.ocr_text);
+        setAnalyzedContentLabel("Redacted OCR text");
+        setScreenshotFile(null);
+        if (screenshotInputRef.current) screenshotInputRef.current.value = "";
+      } else {
+        const result = await analyzeContent({ content, consent });
+        setAnalysis(result);
+        setAnalyzedContent(content.trim());
+        setAnalyzedContentLabel("Analyzed content");
+      }
     } catch (error) {
       setAnalysisError(friendlyError(error));
     } finally {
@@ -378,6 +407,14 @@ export default function Home() {
 
   function updateContent(value: string) {
     setContent(value);
+    setAnalysis(null);
+    setAnalyzedContent("");
+    setAnalysisError(null);
+    setFormError(null);
+  }
+
+  function updateScreenshot(file: File | null) {
+    setScreenshotFile(file);
     setAnalysis(null);
     setAnalyzedContent("");
     setAnalysisError(null);
@@ -426,31 +463,104 @@ export default function Home() {
           </span>
         </div>
         <form noValidate onSubmit={submitAnalysis}>
-          <label className="field-label" htmlFor="financial-content">
-            Paste financial content
-          </label>
-          <textarea
-            aria-describedby="content-help content-count"
-            className="content-input"
-            id="financial-content"
-            maxLength={20_000}
-            onChange={(event) => updateContent(event.target.value)}
-            placeholder="Paste a message, post, advertisement, or financial claim here…"
-            value={content}
-          />
-          <div className="input-meta">
-            <p id="content-help">
-              Up to 20,000 characters. Avoid adding personal account or contact details.
-            </p>
-            <p id="content-count" aria-live="off">
-              {content.length.toLocaleString()} / 20,000
-            </p>
+          <div aria-label="Choose input method" className="input-mode" role="group">
+            <button
+              aria-pressed={inputMode === "text"}
+              className="mode-button"
+              onClick={() => {
+                setInputMode("text");
+                setFormError(null);
+              }}
+              type="button"
+            >
+              Paste text
+            </button>
+            <button
+              aria-pressed={inputMode === "screenshot"}
+              className="mode-button"
+              onClick={() => {
+                setInputMode("screenshot");
+                setFormError(null);
+              }}
+              type="button"
+            >
+              Upload screenshot
+            </button>
           </div>
+
+          {inputMode === "text" ? (
+            <>
+              <label className="field-label" htmlFor="financial-content">
+                Paste financial content
+              </label>
+              <textarea
+                aria-describedby="content-help content-count"
+                className="content-input"
+                id="financial-content"
+                maxLength={20_000}
+                onChange={(event) => updateContent(event.target.value)}
+                placeholder="Paste a message, post, advertisement, or financial claim here…"
+                value={content}
+              />
+              <div className="input-meta">
+                <p id="content-help">
+                  Up to 20,000 characters. Avoid adding personal account or contact details.
+                </p>
+                <p id="content-count" aria-live="off">
+                  {content.length.toLocaleString()} / 20,000
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="upload-panel">
+              <label className="field-label" htmlFor="screenshot-file">
+                Choose a financial-content screenshot
+              </label>
+              <input
+                accept="image/png,image/jpeg,image/webp"
+                aria-describedby="screenshot-help"
+                className="file-input"
+                id="screenshot-file"
+                onChange={(event) =>
+                  updateScreenshot(event.target.files?.[0] ?? null)
+                }
+                ref={screenshotInputRef}
+                type="file"
+              />
+              <p className="upload-help" id="screenshot-help">
+                PNG, JPEG, or WebP · maximum 10 MiB · image is processed for this request
+                only and is not saved by NIRNAY.
+              </p>
+              {screenshotFile && (
+                <div className="selected-file">
+                  <span>{screenshotFile.name}</span>
+                  <span>
+                    {(screenshotFile.size / (1024 * 1024)).toFixed(2)} MiB
+                  </span>
+                  <button
+                    className="text-button"
+                    onClick={() => {
+                      updateScreenshot(null);
+                      if (screenshotInputRef.current) {
+                        screenshotInputRef.current.value = "";
+                      }
+                    }}
+                    type="button"
+                  >
+                    Remove screenshot
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="demo-row">
             <button
               className="text-button"
-              onClick={() => updateContent(DEMO_CONTENT)}
+              onClick={() => {
+                setInputMode("text");
+                updateContent(DEMO_CONTENT);
+              }}
               type="button"
             >
               Load illustrative example
@@ -474,13 +584,16 @@ export default function Home() {
             <span>
               I consent to sending redacted text to an external AI provider for claim
               extraction, and extracted claims plus retrieved evidence to external
-              providers for source retrieval and assessment.
+              providers for source retrieval and assessment. If I upload a screenshot, I
+              also consent to sending the image to the configured OCR provider.
             </span>
           </label>
           <p className="privacy-note">
-            Obvious personal identifiers are redacted locally. The original text is not
-            sent to the assessment provider or saved by NIRNAY; external providers
-            process the redacted text, claims, or evidence as described above.
+            Obvious personal identifiers in text/OCR output are redacted locally before
+            analysis. Images are not redacted before OCR; avoid screenshots containing
+            sensitive details. NIRNAY does not save uploaded images or analyzed text.
+            External providers process the image or redacted analysis inputs as described
+            above, subject to their own handling policies.
           </p>
 
           {formError && (
@@ -495,7 +608,11 @@ export default function Home() {
               disabled={isAnalyzing}
               type="submit"
             >
-              {isAnalyzing ? "Analyzing…" : "Analyze content"}
+              {isAnalyzing
+                ? "Analyzing…"
+                : inputMode === "screenshot"
+                  ? "Analyze screenshot"
+                  : "Analyze content"}
               {!isAnalyzing && <span aria-hidden="true">→</span>}
             </button>
             <p>Analysis is informational and does not provide investment advice.</p>
@@ -518,6 +635,7 @@ export default function Home() {
             </div>
           </div>
           <ol className="progress-steps">
+            {inputMode === "screenshot" && <li>Reading screenshot text</li>}
             <li>Extracting claims</li>
             <li>Finding evidence</li>
             <li>Assessing claims</li>
@@ -546,7 +664,11 @@ export default function Home() {
       )}
 
       {analysis && (
-        <AnalysisResults analysis={analysis} analyzedContent={analyzedContent} />
+        <AnalysisResults
+          analysis={analysis}
+          analyzedContent={analyzedContent}
+          contentLabel={analyzedContentLabel}
+        />
       )}
 
       <footer className="site-footer">

@@ -93,6 +93,14 @@ export type CompleteAnalysisResponse = {
   results: AssessedClaimResult[];
 };
 
+export type ScreenshotAnalysisResponse = {
+  input_type: "screenshot";
+  ocr_text: string;
+  content_type: "image/jpeg" | "image/png" | "image/webp";
+  size_bytes: number;
+  analysis: CompleteAnalysisResponse;
+};
+
 export type HealthResponse = {
   status: "ok";
 };

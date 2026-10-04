@@ -221,6 +221,78 @@ textarea:focus-visible {
   color: #78877f;
 }
 
+.input-mode {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.mode-button {
+  border: 1px solid #cbd9d1;
+  border-radius: 8px;
+  background: #fff;
+  color: #36594b;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mode-button[aria-pressed="true"] {
+  border-color: #1c604b;
+  background: #edf5f0;
+  color: #174b3c;
+}
+
+.upload-panel {
+  border: 1px dashed #bdcdc4;
+  border-radius: 10px;
+  background: #f9fbf9;
+  padding: 16px;
+}
+
+.file-input {
+  display: block;
+  width: 100%;
+  color: #344b40;
+  font-size: 13px;
+}
+
+.file-input::file-selector-button {
+  margin-right: 12px;
+  border: 1px solid #bdcdc4;
+  border-radius: 7px;
+  background: #fff;
+  color: #174b3c;
+  padding: 9px 12px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.upload-help {
+  margin: 10px 0 0;
+  color: #63736b;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.selected-file {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 14px;
+  color: #36594b;
+  font-size: 12px;
+}
+
+.selected-file span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
 .input-meta {
   display: flex;
   justify-content: space-between;

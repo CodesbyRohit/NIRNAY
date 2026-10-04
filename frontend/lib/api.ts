@@ -5,6 +5,7 @@ import type {
   ExtractedClaim,
   HealthResponse,
   ManipulationSignal,
+  ScreenshotAnalysisResponse,
 } from "@/lib/types";
 
 const API_BASE_URL =
@@ -177,6 +178,82 @@ export async function analyzeContent(
     );
   }
 
+  return body;
+}
+
+function isScreenshotAnalysisResponse(
+  value: unknown,
+): value is ScreenshotAnalysisResponse {
+  return (
+    isRecord(value) &&
+    value.input_type === "screenshot" &&
+    typeof value.ocr_text === "string" &&
+    value.ocr_text.trim().length > 0 &&
+    (value.content_type === "image/jpeg" ||
+      value.content_type === "image/png" ||
+      value.content_type === "image/webp") &&
+    typeof value.size_bytes === "number" &&
+    Number.isInteger(value.size_bytes) &&
+    value.size_bytes > 0 &&
+    value.size_bytes <= 10 * 1024 * 1024 &&
+    isCompleteAnalysisResponse(value.analysis)
+  );
+}
+
+export async function analyzeScreenshot(
+  file: File,
+  consent: boolean,
+): Promise<ScreenshotAnalysisResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("consent", String(consent));
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE_URL.replace(/\/+$/, "")}/api/v1/analyze/screenshot`,
+      {
+        method: "POST",
+        body: form,
+        cache: "no-store",
+      },
+    );
+  } catch {
+    throw new Error("Could not reach the screenshot analysis service.");
+  }
+
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    if (response.status === 403) {
+      throw new Error("Consent is required before image processing can begin.");
+    }
+    if (response.status === 413) {
+      throw new Error("This image exceeds the 10 MiB upload limit.");
+    }
+    if (response.status === 415) {
+      throw new Error("Choose a PNG, JPEG, or WebP image.");
+    }
+    if (response.status === 422) {
+      throw new Error(
+        "The image is invalid or contains no usable text. Check the image and try again.",
+      );
+    }
+    if (response.status === 502) {
+      throw new Error("An OCR or analysis provider failed. No results were displayed.");
+    }
+    if (response.status === 503) {
+      throw new Error(
+        "Screenshot OCR or an analysis provider is not configured or unavailable.",
+      );
+    }
+    throw new Error("Screenshot analysis failed. Please try again later.");
+  }
+
+  if (!isScreenshotAnalysisResponse(body)) {
+    throw new Error(
+      "The screenshot service returned a malformed response. No results were displayed.",
+    );
+  }
   return body;
 }
 
