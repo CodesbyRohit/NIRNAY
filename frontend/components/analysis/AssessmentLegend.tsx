@@ -21,6 +21,12 @@ export function AssessmentLegend() {
         Labels are qualitative. NIRNAY does not report a confidence percentage or a
         probability that a claim is true.
       </p>
+      <p className="small-copy">
+        An AI model proposes each label, and fixed rules then check it. A model cannot mark
+        a claim Supported or Contradicted without citing retrieved page text; if it tries,
+        the rules change the label to Needs more evidence and replace the explanation.
+        Claims with no retrieved sources are marked Unverified without using a model.
+      </p>
     </details>
   );
 }

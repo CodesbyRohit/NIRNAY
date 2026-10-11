@@ -17,7 +17,7 @@ const ERROR_COPY: Record<
   provider_unavailable: {
     title: "Analysis isn’t available right now",
     nextStep:
-      "A required provider (AI model, search, or text recognition) is not configured or is temporarily unavailable. Try again later. If you run this service, check the backend provider settings described in the README.",
+      "A required provider (AI model, search, or text recognition) is not configured or is temporarily unavailable. If you run this service, check the backend provider settings described in the README.",
     retryable: true,
     icon: "alert",
   },

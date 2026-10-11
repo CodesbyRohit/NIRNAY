@@ -135,14 +135,17 @@ export function excerptSourceLabel(
   }
 }
 
-export type Provenance = "source" | "ai" | "rule" | "demo" | "live";
+export type Provenance = "source" | "ai" | "noModel" | "rule" | "demo" | "live";
 
 export const PROVENANCE_COPY: Record<
   Provenance,
   { label: string; tone: Tone; icon: IconName }
 > = {
   source: { label: "Retrieved source data", tone: "neutral", icon: "document" },
-  ai: { label: "AI assessment · model-generated", tone: "ai", icon: "model" },
+  // The backend may replace a model's label and text with fixed wording when its guardrails apply.
+  ai: { label: "AI-assisted assessment", tone: "ai", icon: "model" },
+  // With no retrieved evidence the backend returns Unverified without calling a model.
+  noModel: { label: "Fixed rule · no model used", tone: "neutral", icon: "rule" },
   rule: { label: "Rule-based pattern match", tone: "signal", icon: "rule" },
   demo: { label: "Demo fixture · not live research", tone: "demo", icon: "flask" },
   live: { label: "Live search result", tone: "live", icon: "globe" },

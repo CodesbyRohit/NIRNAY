@@ -22,6 +22,7 @@ export function ClaimCard({
   const state = result.assessment.assessment;
   const copy = ASSESSMENT_COPY[state];
   const claimSignals = uniqueSignals(result.manipulation_signals, contentSignals);
+  const assessmentProvenance = result.evidence.length === 0 ? "noModel" : "ai";
 
   return (
     <li className="claim-card card" aria-labelledby={`${id}-text`}>
@@ -48,7 +49,7 @@ export function ClaimCard({
           <h4 className="heading-sm" id={`${id}-why`}>
             Why this assessment
           </h4>
-          <ProvenanceTag kind="ai" />
+          <ProvenanceTag kind={assessmentProvenance} />
         </div>
         <p className="body-copy">{result.assessment.rationale}</p>
       </section>
@@ -60,7 +61,7 @@ export function ClaimCard({
           <h4 className="heading-sm" id={`${id}-uncertain`}>
             What remains uncertain
           </h4>
-          <ProvenanceTag kind="ai" />
+          <ProvenanceTag kind={assessmentProvenance} />
         </div>
         <p className="body-copy">{result.assessment.uncertainty}</p>
         {(state === "Unverified" || state === "Needs more evidence") && (

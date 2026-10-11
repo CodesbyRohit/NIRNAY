@@ -218,7 +218,7 @@ export default function Home() {
                   </li>
                   <li>
                     <Icon name="model" size={18} />
-                    AI-written assessments are clearly labelled
+                    AI-assisted assessments are clearly labelled
                   </li>
                   <li>
                     <Icon name="compass" size={18} />
