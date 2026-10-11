@@ -15,6 +15,10 @@ AI-powered financial content verfication and literacy engine for Indian retail i
 - Original input and redacted text are held only in request memory; this foundation has no database or content persistence.
 - `.env.example`: frontend API URL, CORS origins, and backend-only hosted LLM/search provider configuration.
 
+### Frontend design
+
+The interface uses design tokens in `frontend/app/globals.css` (deep navy, warm ivory, muted teal, and AA-contrast status tones), self-hosted Inter and Source Serif 4 via `next/font`, and an inline icon set. UI primitives live in `frontend/components/ui/` and the analysis experience in `frontend/components/analysis/`; user-facing labels for API values are centralised in `frontend/lib/labels.ts` to simplify adding another locale. Results show the backend's four assessment states verbatim and tag every block by provenance: retrieved source data, AI-assisted assessment, fixed rule (no model used), rule-based pattern match, or demo fixture. Evidence is grouped into sources the assessment cited and sources only retrieved, in backend ranking order; the API has no per-source supports/contradicts stance, so the UI does not invent one. "What to check next" items are chosen by fixed rules in `frontend/lib/nextSteps.ts`.
+
 ## Local setup
 
 Requirements: Node.js 20.9 or newer, npm, and Python 3.10 or newer.

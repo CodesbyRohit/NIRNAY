@@ -11,6 +11,28 @@ import type {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
+export type ApiErrorKind =
+  | "network"
+  | "consent"
+  | "invalid_input"
+  | "too_large"
+  | "unsupported_type"
+  | "provider_unavailable"
+  | "provider_failed"
+  | "malformed"
+  | "unknown";
+
+/** An analysis failure with a user-safe message and a category the UI can act on. */
+export class ApiError extends Error {
+  readonly kind: ApiErrorKind;
+
+  constructor(kind: ApiErrorKind, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.kind = kind;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -146,34 +168,44 @@ export async function analyzeContent(
       cache: "no-store",
     });
   } catch {
-    throw new Error("Could not reach the analysis service. Check the backend and API URL.");
+    throw new ApiError(
+      "network",
+      "Could not reach the analysis service. Check the backend and API URL.",
+    );
   }
 
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 403) {
-      throw new Error("Consent is required before external processing can begin.");
+      throw new ApiError(
+        "consent",
+        "Consent is required before external processing can begin.",
+      );
     }
     if (response.status === 422) {
-      throw new Error(
+      throw new ApiError(
+        "invalid_input",
         "The input could not be processed. Check that it is within the 20,000-character limit.",
       );
     }
     if (response.status === 502) {
-      throw new Error(
+      throw new ApiError(
+        "provider_failed",
         "An analysis provider returned an unusable response. No results were displayed.",
       );
     }
     if (response.status === 503) {
-      throw new Error(
+      throw new ApiError(
+        "provider_unavailable",
         "An analysis provider is unavailable or not configured. Please try again later.",
       );
     }
-    throw new Error("Analysis failed. Please try again later.");
+    throw new ApiError("unknown", "Analysis failed. Please try again later.");
   }
 
   if (!isCompleteAnalysisResponse(body)) {
-    throw new Error(
+    throw new ApiError(
+      "malformed",
       "The analysis service returned a malformed response. No results were displayed.",
     );
   }
@@ -219,38 +251,47 @@ export async function analyzeScreenshot(
       },
     );
   } catch {
-    throw new Error("Could not reach the screenshot analysis service.");
+    throw new ApiError("network", "Could not reach the screenshot analysis service.");
   }
 
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 403) {
-      throw new Error("Consent is required before image processing can begin.");
+      throw new ApiError(
+        "consent",
+        "Consent is required before image processing can begin.",
+      );
     }
     if (response.status === 413) {
-      throw new Error("This image exceeds the 10 MiB upload limit.");
+      throw new ApiError("too_large", "This image exceeds the 10 MiB upload limit.");
     }
     if (response.status === 415) {
-      throw new Error("Choose a PNG, JPEG, or WebP image.");
+      throw new ApiError("unsupported_type", "Choose a PNG, JPEG, or WebP image.");
     }
     if (response.status === 422) {
-      throw new Error(
+      throw new ApiError(
+        "invalid_input",
         "The image is invalid or contains no usable text. Check the image and try again.",
       );
     }
     if (response.status === 502) {
-      throw new Error("An OCR or analysis provider failed. No results were displayed.");
+      throw new ApiError(
+        "provider_failed",
+        "An OCR or analysis provider failed. No results were displayed.",
+      );
     }
     if (response.status === 503) {
-      throw new Error(
+      throw new ApiError(
+        "provider_unavailable",
         "Screenshot OCR or an analysis provider is not configured or unavailable.",
       );
     }
-    throw new Error("Screenshot analysis failed. Please try again later.");
+    throw new ApiError("unknown", "Screenshot analysis failed. Please try again later.");
   }
 
   if (!isScreenshotAnalysisResponse(body)) {
-    throw new Error(
+    throw new ApiError(
+      "malformed",
       "The screenshot service returned a malformed response. No results were displayed.",
     );
   }
@@ -352,6 +393,7 @@ export async function findEvidence(
             "excerpt_source" in source.evidence &&
             (source.evidence.excerpt_source === "search_provider_snippet" ||
               source.evidence.excerpt_source === "demo_fixture" ||
+              source.evidence.excerpt_source === "source_page_excerpt" ||
               source.evidence.excerpt_source === null) &&
             "published_date" in source &&
             (typeof source.published_date === "string" ||
