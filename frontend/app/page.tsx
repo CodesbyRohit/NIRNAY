@@ -6,21 +6,33 @@ import {
   DEMO_CONTENT,
   type InputMode,
 } from "@/components/analysis/AnalysisForm";
+import { ErrorPanel } from "@/components/analysis/ErrorPanel";
 import { HowItWorks } from "@/components/analysis/HowItWorks";
+import { ProgressPanel } from "@/components/analysis/ProgressPanel";
 import { ResultsWorkspace } from "@/components/analysis/ResultsWorkspace";
 import { SiteFooter } from "@/components/analysis/SiteFooter";
 import { SiteHeader, type HealthState } from "@/components/analysis/SiteHeader";
 import { TrustPanels } from "@/components/analysis/TrustPanels";
 import { Icon } from "@/components/ui/Icon";
-import { analyzeContent, analyzeScreenshot, checkBackendHealth } from "@/lib/api";
+import {
+  ApiError,
+  analyzeContent,
+  analyzeScreenshot,
+  checkBackendHealth,
+  type ApiErrorKind,
+} from "@/lib/api";
 import type { CompleteAnalysisResponse } from "@/lib/types";
 
 const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
 
-function friendlyError(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "Analysis could not be completed. Please try again.";
+type AnalysisFailure = { kind: ApiErrorKind; message: string };
+
+function friendlyError(error: unknown): AnalysisFailure {
+  if (error instanceof ApiError) return { kind: error.kind, message: error.message };
+  return {
+    kind: "unknown",
+    message: "Analysis could not be completed. Please try again.",
+  };
 }
 
 export default function Home() {
@@ -33,12 +45,15 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<CompleteAnalysisResponse | null>(null);
   const [analyzedContent, setAnalyzedContent] = useState("");
   const [analyzedContentLabel, setAnalyzedContentLabel] = useState("Analyzed content");
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<AnalysisFailure | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingPreview, setPendingPreview] = useState({ label: "", text: "" });
+  const [announcement, setAnnouncement] = useState("");
   const screenshotInputRef = useRef<HTMLInputElement>(null);
   const resultsHeadingRef = useRef<HTMLHeadingElement>(null);
+  const errorHeadingRef = useRef<HTMLHeadingElement>(null);
 
-  useEffect(() => {
+  function refreshHealth(): () => void {
     let mounted = true;
     void checkBackendHealth()
       .then(() => {
@@ -50,7 +65,9 @@ export default function Home() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }
+
+  useEffect(() => refreshHealth(), []);
 
   useEffect(() => {
     if (analysis) {
@@ -59,9 +76,18 @@ export default function Home() {
     }
   }, [analysis]);
 
+  useEffect(() => {
+    if (analysisError) errorHeadingRef.current?.focus();
+  }, [analysisError]);
+
   async function submitAnalysis(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await runAnalysis();
+  }
+
+  async function runAnalysis() {
     setAnalysisError(null);
+    setAnnouncement("");
 
     if (inputMode === "text" && !content.trim()) {
       setFormError("Paste financial content before starting an analysis.");
@@ -85,26 +111,39 @@ export default function Home() {
     }
 
     setFormError(null);
+    setPendingPreview(
+      inputMode === "screenshot" && screenshotFile
+        ? { label: "Screenshot", text: screenshotFile.name }
+        : { label: "Submitted content", text: content.trim() },
+    );
     setIsAnalyzing(true);
     setAnalysis(null);
     setAnalyzedContent("");
+    setAnnouncement("Analysis started.");
+    window.scrollTo({ top: 0 });
 
     try {
+      let result: CompleteAnalysisResponse;
       if (inputMode === "screenshot" && screenshotFile) {
-        const result = await analyzeScreenshot(screenshotFile, consent);
-        setAnalysis(result.analysis);
-        setAnalyzedContent(result.ocr_text);
+        const screenshotResult = await analyzeScreenshot(screenshotFile, consent);
+        result = screenshotResult.analysis;
+        setAnalyzedContent(screenshotResult.ocr_text);
         setAnalyzedContentLabel("Redacted OCR text");
         setScreenshotFile(null);
         if (screenshotInputRef.current) screenshotInputRef.current.value = "";
       } else {
-        const result = await analyzeContent({ content, consent });
-        setAnalysis(result);
+        result = await analyzeContent({ content, consent });
         setAnalyzedContent(content.trim());
         setAnalyzedContentLabel("Analyzed content");
       }
+      setAnalysis(result);
+      const count = result.results.length;
+      setAnnouncement(
+        `Analysis complete. ${count} claim${count === 1 ? "" : "s"} assessed.`,
+      );
     } catch (error) {
       setAnalysisError(friendlyError(error));
+      setAnnouncement("");
     } finally {
       setIsAnalyzing(false);
     }
@@ -142,8 +181,17 @@ export default function Home() {
   return (
     <>
       <SiteHeader health={health} />
+      <p aria-live="polite" className="sr-only" role="status">
+        {announcement}
+      </p>
       <main className="page-shell" id="main" tabIndex={-1}>
-        {analysis ? (
+        {isAnalyzing ? (
+          <ProgressPanel
+            includesOcr={inputMode === "screenshot"}
+            previewLabel={pendingPreview.label}
+            previewText={pendingPreview.text}
+          />
+        ) : analysis ? (
           <ResultsWorkspace
             analysis={analysis}
             analyzedContent={analyzedContent}
@@ -180,30 +228,17 @@ export default function Home() {
               </div>
 
               <div className="hero-form">
-                {isAnalyzing && (
-                  <section
-                    aria-busy="true"
-                    aria-labelledby="progress-heading"
-                    className="progress-card"
-                    role="status"
-                  >
-                    <h2 id="progress-heading">Analysis in progress</h2>
-                    <p>
-                      The analysis service does not report live progress for individual
-                      steps.
-                    </p>
-                  </section>
-                )}
-
                 {analysisError && (
-                  <section
-                    aria-labelledby="error-heading"
-                    className="error-card"
-                    role="alert"
-                  >
-                    <h2 id="error-heading">Your results are not available</h2>
-                    <p>{analysisError}</p>
-                  </section>
+                  <ErrorPanel
+                    headingRef={errorHeadingRef}
+                    kind={analysisError.kind}
+                    message={analysisError.message}
+                    onDismiss={() => setAnalysisError(null)}
+                    onRetry={() => {
+                      refreshHealth();
+                      void runAnalysis();
+                    }}
+                  />
                 )}
 
                 <AnalysisForm
