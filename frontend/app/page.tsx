@@ -1,6 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  AnalysisForm,
+  DEMO_CONTENT,
+  type InputMode,
+} from "@/components/analysis/AnalysisForm";
+import { HowItWorks } from "@/components/analysis/HowItWorks";
+import { SiteFooter } from "@/components/analysis/SiteFooter";
+import { SiteHeader, type HealthState } from "@/components/analysis/SiteHeader";
+import { TrustPanels } from "@/components/analysis/TrustPanels";
+import { Icon } from "@/components/ui/Icon";
 import { analyzeContent, analyzeScreenshot, checkBackendHealth } from "@/lib/api";
 import type {
   AssessmentState,
@@ -9,10 +19,6 @@ import type {
   ManipulationSignal,
 } from "@/lib/types";
 
-type HealthState = "checking" | "online" | "offline";
-
-const DEMO_CONTENT =
-  "SEBI approved XYZ investment plan. Guaranteed 30% return. Only 200 slots remaining. Join NOW!";
 const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
 
 const SIGNAL_LABELS: Record<ManipulationSignal["signal_type"], string> = {
@@ -326,10 +332,11 @@ function AnalysisResults({
   );
 }
 
+
 export default function Home() {
   const [health, setHealth] = useState<HealthState>("checking");
   const [content, setContent] = useState("");
-  const [inputMode, setInputMode] = useState<"text" | "screenshot">("text");
+  const [inputMode, setInputMode] = useState<InputMode>("text");
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [consent, setConsent] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -419,262 +426,97 @@ export default function Home() {
     setAnalyzedContent("");
     setAnalysisError(null);
     setFormError(null);
+    if (!file && screenshotInputRef.current) screenshotInputRef.current.value = "";
   }
 
   return (
-    <main className="page-shell">
-      <header className="site-header">
-        <a aria-label="NIRNAY home" className="brand" href="#top">
-          <span aria-hidden="true" className="brand-mark">
-            N
-          </span>
-          <span>NIRNAY</span>
-        </a>
-        <div aria-live="polite" className={`service-status status-${health}`}>
-          <span aria-hidden="true" className="status-dot" />
-          {health === "checking"
-            ? "Connecting to analysis service"
-            : health === "online"
-              ? "Analysis service connected"
-              : "Analysis service unavailable"}
-        </div>
-      </header>
-
-      <section aria-labelledby="page-title" className="hero" id="top">
-        <p className="eyebrow">A clearer way to check financial claims</p>
-        <h1 id="page-title">Verify before you trust.</h1>
-        <p className="hero-copy">
-          Check financial content against evidence before acting on it.
-        </p>
-        <p className="hero-detail">
-          NIRNAY separates claims, finds sources, and shows what the available evidence
-          can—and cannot—establish.
-        </p>
-      </section>
-
-      <section aria-labelledby="input-heading" className="input-card">
-        <div className="card-heading">
-          <div>
-            <p className="eyebrow">Start an investigation</p>
-            <h2 id="input-heading">What would you like to check?</h2>
-          </div>
-          <span className="privacy-chip">
-            <span aria-hidden="true">⌑</span> No saved history
-          </span>
-        </div>
-        <form noValidate onSubmit={submitAnalysis}>
-          <div aria-label="Choose input method" className="input-mode" role="group">
-            <button
-              aria-pressed={inputMode === "text"}
-              className="mode-button"
-              onClick={() => {
-                setInputMode("text");
-                setFormError(null);
-              }}
-              type="button"
-            >
-              Paste text
-            </button>
-            <button
-              aria-pressed={inputMode === "screenshot"}
-              className="mode-button"
-              onClick={() => {
-                setInputMode("screenshot");
-                setFormError(null);
-              }}
-              type="button"
-            >
-              Upload screenshot
-            </button>
-          </div>
-
-          {inputMode === "text" ? (
-            <>
-              <label className="field-label" htmlFor="financial-content">
-                Paste financial content
-              </label>
-              <textarea
-                aria-describedby="content-help content-count"
-                className="content-input"
-                id="financial-content"
-                maxLength={20_000}
-                onChange={(event) => updateContent(event.target.value)}
-                placeholder="Paste a message, post, advertisement, or financial claim here…"
-                value={content}
-              />
-              <div className="input-meta">
-                <p id="content-help">
-                  Up to 20,000 characters. Avoid adding personal account or contact details.
-                </p>
-                <p id="content-count" aria-live="off">
-                  {content.length.toLocaleString()} / 20,000
-                </p>
-              </div>
-            </>
-          ) : (
-            <div className="upload-panel">
-              <label className="field-label" htmlFor="screenshot-file">
-                Choose a financial-content screenshot
-              </label>
-              <input
-                accept="image/png,image/jpeg,image/webp"
-                aria-describedby="screenshot-help"
-                className="file-input"
-                id="screenshot-file"
-                onChange={(event) =>
-                  updateScreenshot(event.target.files?.[0] ?? null)
-                }
-                ref={screenshotInputRef}
-                type="file"
-              />
-              <p className="upload-help" id="screenshot-help">
-                PNG, JPEG, or WebP · maximum 10 MiB · image is processed for this request
-                only and is not saved by NIRNAY.
-              </p>
-              {screenshotFile && (
-                <div className="selected-file">
-                  <span>{screenshotFile.name}</span>
-                  <span>
-                    {(screenshotFile.size / (1024 * 1024)).toFixed(2)} MiB
-                  </span>
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      updateScreenshot(null);
-                      if (screenshotInputRef.current) {
-                        screenshotInputRef.current.value = "";
-                      }
-                    }}
-                    type="button"
-                  >
-                    Remove screenshot
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="demo-row">
-            <button
-              className="text-button"
-              onClick={() => {
-                setInputMode("text");
-                updateContent(DEMO_CONTENT);
-              }}
-              type="button"
-            >
-              Load illustrative example
-            </button>
-            <p>
-              <span className="demo-content">“{DEMO_CONTENT}”</span> Fictional
-              demonstration only; XYZ is not presented as a real investment product.
+    <>
+      <SiteHeader health={health} />
+      <main className="page-shell" id="main" tabIndex={-1}>
+        <section aria-labelledby="page-title" className="hero" id="top">
+          <div className="hero-copy">
+            <p className="eyebrow">For forwarded tips, ads, and posts about money</p>
+            <h1 className="display" id="page-title">
+              Check the claim before you trust the message.
+            </h1>
+            <p className="lede">
+              NIRNAY separates financial content into individual claims, looks for sources,
+              and shows what the evidence can — and cannot — establish.
             </p>
+            <ul className="hero-points">
+              <li>
+                <Icon name="document" size={18} />
+                Every source shown with its website, date, and an excerpt
+              </li>
+              <li>
+                <Icon name="model" size={18} />
+                AI-written assessments are clearly labelled
+              </li>
+              <li>
+                <Icon name="compass" size={18} />
+                Uncertainty and next checks are shown, not hidden
+              </li>
+            </ul>
           </div>
 
-          <label className="consent-row">
-            <input
-              checked={consent}
-              className="consent-checkbox"
-              onChange={(event) => {
-                setConsent(event.target.checked);
-                setFormError(null);
-              }}
-              type="checkbox"
-            />
-            <span>
-              I consent to sending redacted text to an external AI provider for claim
-              extraction, and extracted claims plus retrieved evidence to external
-              providers for source retrieval and assessment. If I upload a screenshot, I
-              also consent to sending the image to the configured OCR provider.
-            </span>
-          </label>
-          <p className="privacy-note">
-            Obvious personal identifiers in text/OCR output are redacted locally before
-            analysis. Images are not redacted before OCR; avoid screenshots containing
-            sensitive details. NIRNAY does not save uploaded images or analyzed text.
-            External providers process the image or redacted analysis inputs as described
-            above, subject to their own handling policies.
-          </p>
-
-          {formError && (
-            <p className="form-message form-error" role="alert">
-              {formError}
-            </p>
-          )}
-          <div className="submit-row">
-            <button
-              aria-busy={isAnalyzing}
-              className="analyze-button"
-              disabled={isAnalyzing}
-              type="submit"
-            >
-              {isAnalyzing
-                ? "Analyzing…"
-                : inputMode === "screenshot"
-                  ? "Analyze screenshot"
-                  : "Analyze content"}
-              {!isAnalyzing && <span aria-hidden="true">→</span>}
-            </button>
-            <p>Analysis is informational and does not provide investment advice.</p>
-          </div>
-        </form>
-      </section>
-
-      {isAnalyzing && (
-        <section
-          aria-busy="true"
-          aria-labelledby="progress-heading"
-          className="progress-card"
-          role="status"
-        >
-          <div className="progress-title">
-            <span aria-hidden="true" className="loading-spinner" />
-            <div>
-              <h2 id="progress-heading">Analysis in progress</h2>
-              <p>The analysis service does not report live progress for individual steps.</p>
-            </div>
-          </div>
-          <ol className="progress-steps">
-            {inputMode === "screenshot" && <li>Reading screenshot text</li>}
-            <li>Extracting claims</li>
-            <li>Finding evidence</li>
-            <li>Assessing claims</li>
-            <li>Detecting manipulation signals</li>
-          </ol>
+          <AnalysisForm
+            consent={consent}
+            content={content}
+            formError={formError}
+            health={health}
+            inputMode={inputMode}
+            isAnalyzing={isAnalyzing}
+            onConsentChange={(value) => {
+              setConsent(value);
+              setFormError(null);
+            }}
+            onContentChange={updateContent}
+            onInputModeChange={(mode) => {
+              setInputMode(mode);
+              setFormError(null);
+            }}
+            onLoadExample={() => {
+              setInputMode("text");
+              updateContent(DEMO_CONTENT);
+            }}
+            onScreenshotChange={updateScreenshot}
+            onSubmit={submitAnalysis}
+            screenshotFile={screenshotFile}
+            screenshotInputRef={screenshotInputRef}
+          />
         </section>
-      )}
 
-      {analysisError && (
-        <section aria-labelledby="error-heading" className="error-card" role="alert">
-          <p className="eyebrow">Unable to complete analysis</p>
-          <h2 id="error-heading">Your results are not available</h2>
-          <p>{analysisError}</p>
-          <p className="muted-copy">
-            Your content remains in this page only. You can retry when the service is
-            available.
-          </p>
-          <button
-            className="text-button"
-            onClick={() => setAnalysisError(null)}
-            type="button"
+        {isAnalyzing && (
+          <section
+            aria-busy="true"
+            aria-labelledby="progress-heading"
+            className="progress-card"
+            role="status"
           >
-            Dismiss message
-          </button>
-        </section>
-      )}
+            <h2 id="progress-heading">Analysis in progress</h2>
+            <p>The analysis service does not report live progress for individual steps.</p>
+          </section>
+        )}
 
-      {analysis && (
-        <AnalysisResults
-          analysis={analysis}
-          analyzedContent={analyzedContent}
-          contentLabel={analyzedContentLabel}
-        />
-      )}
+        {analysisError && (
+          <section aria-labelledby="error-heading" className="error-card" role="alert">
+            <h2 id="error-heading">Your results are not available</h2>
+            <p>{analysisError}</p>
+          </section>
+        )}
 
-      <footer className="site-footer">
-        <p>NIRNAY · Financial information awareness</p>
-        <p>Review evidence, keep uncertainty visible, and verify sources directly.</p>
-      </footer>
-    </main>
+        {analysis && (
+          <AnalysisResults
+            analysis={analysis}
+            analyzedContent={analyzedContent}
+            contentLabel={analyzedContentLabel}
+          />
+        )}
+
+        <HowItWorks />
+        <TrustPanels />
+      </main>
+      <SiteFooter />
+    </>
   );
 }
